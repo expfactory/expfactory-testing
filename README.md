@@ -174,3 +174,77 @@ ls /opt/expfactory
 ```
 
 They weren't, which meant that the CORS settings were preventing the POST, not something happening on the server (e.g., the response never gets there!)
+
+## 8. Debug in the Browser
+This is where the richest source of debugging is going to originate, because the browser carries all the secrets of your requests and responses, and you just need to know where to look. First, let's review what we are debugging. We have an experiment that is POSTing data to the server, the `/save` endpoint, and
+it uses a different method ([fetch](https://davidwalsh.name/fetch)) instead of ([ajax](https://www.w3schools.com/xml/ajax_xmlhttprequest_send.asp)) and it's not working. Specifically, it returns a 400 error:
+
+```javascript
+POST http://127.0.0.1/save 400 (BAD REQUEST)
+``` 
+
+Ruhroh! 
+
+### Step 1. Hypothesize what might be wrong
+
+A 400 error is typically indicative of a bad request. Here are some reasons this might happen:
+
+#### Errors coming from the view
+It could be the case that the POST is reaching the view in the server, and something about it isn't liked, so the server view returns the 400. This could be any of the following:
+
+ 1. Some data is posted, the view doesn't like it, and returns the error.
+ 2. There is some authentication issue, but instead of a 403 or other, a 400 was returned as a more general "sorry this is a bad request."
+ 3. The expected format of the request is incorrect.
+
+The nice thing about this kind of error is that you can debug it by adding a few lines to the view. In my case, I did the following:
+
+ 1. I added some printing to server logs so I could confirm that the view was hit (or not).
+ 2. I added some lines to save variables to a local file, so I could load. This is useful to then be able to interactively shell into the container, find the data files, load them, and then step through the code until you hit an error.
+
+#### Errors from the Flask server
+One level up from the view is the server, which in this case is uwsgi with Flask. The errors we are going to see here related to issues with CORS, or checks for cross request forgery. If this is the error, then we wouldn't see any evidence of the view getting hit, because it wouldn't get there, but we still might get a bad request.
+
+#### Errors from the web Server
+One level up from Flask is nginx, which would typically return a 500 error if it was forwarding along an issue from the application (e.g., some code has a typo).
+
+Based on the error that I saw, I hypothesized that we were dealing with something related to the first or second. The next step would be to figure out the extent to which we are hitting the application.
+
+
+### Step 2. Determine Level of Investigation
+I next did as I mentioned previously - I added a bunch of saves and logging to the view that was being hit (and erroring) to determine if we were reaching it, period. The quick answer was that we were not - there was no indication that the application view was being touched. This was very good, because I knew that it was an issue with the Flask server, and specifically, I hypothesized it was an issue with CORS and correctly passing the csrf token header. This could be due to one of several issues.
+
+**Is Jquery influencing it?**
+The first (original) method of posting with Ajax had an extra dependency of JQuery, and to maintain support for these experiments I had kept jquery defined as a script. This particular view had the library defined, and also added an `ajaxSetup` to set the header in advance. For those interested, I do this so that any experiment can have the csrf token header added without needing to customize it for the experiment factory apriori. However, if it's the case that I'm not allowed to ask for the csrf token twice (once with the ajaxSetup, and then again via the fetch) the token wouldn't be passed, and we would get an error. To test this, I removed the extra jquery and ajaxSetup steps, and confirmed that the error happened regardless. Later I was also able to confirm that the same csrf token is passed via both methods, one just works and the other one doesn't. So the presence of absence of jquery, or the extra ajaxSetup didn't seem to be a variable.
+
+**Is it the format of the data or headers?**
+It's important to have an understanding of how the data is being POSTed to the server, and if possible, to have a comparison between a working example and a non working example. In my case, I was lucky to have an example of a POST (with Ajax) that my colleague had put together using the same experiment view that worked:
+
+```bash
+$.ajax({
+  type: "POST",
+  url: '/save',
+  data: { "data": study.options.datastore.exportJson() },
+  dataType: "application/json",
+  success: function() { console.log('success') },
+  error: function(err) { console.log('error', err) }
+});
+```
+
+I would first try this, for a sanity check. To do this, you can just right click on the browser window, click inspect, and then go to the "Console" tab. You can type JavaScript into here, and whatever functions are defined on the page are available to you! I'd be in major trouble if something that was previously reported working was no longer working. Thankfully, it worked! At this point I knew that I had cornered the problem - we would be able to look at the complete record for a working vs. not working POST, from the same exact view. We've reached the goal of step 2, because the level of investigation is here from the browser. Let's jump into our next step to discuss how to do this.
+
+### Step 3. Investigate 
+With a working and non-working example, we can look more closely at a few things:
+
+ - requests from the browser to the server
+ - responses from the server back to the browser
+ - the data being sent
+
+We then compared this working POST to the one that is being done with fetch to hopefully figure out the issue. Here is an example, first the broken request:
+
+![image](https://user-images.githubusercontent.com/814322/42739205-6cdfa162-8847-11e8-9f11-42059b33da78.png)
+
+and here is the working one, with ajax:
+
+![image](https://user-images.githubusercontent.com/814322/42739195-48631ae4-8847-11e8-9462-87cac679eb54.png)
+
+We think that the answer lies here, and the way to debug this is to make changes, and test incrementally until something works.  The continued 400 response (bad request) tells us that there is still a difference between what this test stroop-task is posting internally with fetch, and what the ajax does. This suggests that something is missing so the server will accept it period. 
