@@ -247,4 +247,7 @@ and here is the working one, with ajax:
 
 ![image](https://user-images.githubusercontent.com/814322/42739195-48631ae4-8847-11e8-9462-87cac679eb54.png)
 
-We think that the answer lies here, and the way to debug this is to make changes, and test incrementally until something works.  The continued 400 response (bad request) tells us that there is still a difference between what this test stroop-task is posting internally with fetch, and what the ajax does. This suggests that something is missing so the server will accept it period. 
+We think that the answer lies here, and the way to debug this is to make changes, and test incrementally until something works.  The continued 400 response (bad request) tells us that there is still a difference between what this test stroop-task is posting internally with fetch, and what the ajax does. This suggests that something is missing so the server will accept it period.
+
+### So What Happened?
+After almost 100 [back and forths](https://github.com/FelixHenninger/lab.js/issues/18), we got it! It was an awesome span of work in under a few days, and it was both fun and fulfilling to tackle solving the culmination of many small pieces into one final product. If you want an early preview of our work, check out the <a href="https://expfactory.github.io/expfactory/integration-labjs" target="_blank">LabJS integration page here</a>, and you can expect some beautiful LabJS based documentation to come in the following weeks.
